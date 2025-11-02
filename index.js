@@ -6,78 +6,90 @@ dotenv.config();
 const app = express();
 app.use(express.json());
 
-const genres = [
-    {
-        id: 1,
-        name: "indie-pop",
-    },
-    {
-        id: 2,
-        name: "rock",
-    },
-    {
-        id: 3,
-        name: "amapiano",
-    },
+let genres = [
+    { id: 1, name: "indie-pop" },
+    { id: 2, name: "rock" },
+    { id: 3, name: "amapiano" },
 ];
-app.get("/", (req, res) => {
-    res.send("Welcome to Genres API!");
+
+const genreSchema = Joi.object({
+    name: Joi.string().trim().min(3).max(40).required(),
+}).options({ abortEarly: false, allowUnknown: false });
+
+function validateGenre(req, res, next) {
+    const { error, value } = genreSchema.validate(req.body);
+    if (error) {
+        return res.status(400).json({
+            error: "Invalid input",
+            details: error.details.map((d) => d.message),
+        });
+    }
+    req.validatedBody = value;
+    next();
+}
+
+app.get("/", (_, res) => {
+    res.json({ message: "Welcome to Genres API!" });
 });
 
-app.get("/api/genres", (req, res) => {
-    res.send(genres);
+app.get("/api/genres", (_, res) => {
+    res.json(genres);
 });
 
 app.get("/api/genres/:id", (req, res) => {
-    const genre = genres.find((g) => g.id === parseInt(req.params.id, 10));
-    if (!genre) return res.status(404).send("Genre with given ID not found.");
-    res.send(genre);
+    const id = parseInt(req.params.id, 10);
+    const genre = genres.find((g) => g.id === id);
+    if (!genre)
+        return res
+            .status(404)
+            .json({ error: "Genre with given ID not found." });
+    res.json(genre);
 });
 
-app.post("/api/genres", (req, res) => {
-    const { error } = validateGenre(req.body);
-
-    if (error) return res.status(400).send("Invalid input.");
-
-    const genre = {
-        id: genres.length + 1,
-        name: req.body.name,
-    };
-
+app.post("/api/genres", validateGenre, (req, res) => {
+    const exists = genres.some(
+        (g) => g.name.toLowerCase() === req.validatedBody.name.toLowerCase()
+    );
+    if (exists) return res.status(400).json({ error: "Genre already exists." });
+    const nextId =
+        (genres.length ? Math.max(...genres.map((g) => g.id)) : 0) + 1;
+    const genre = { id: nextId, name: req.validatedBody.name };
     genres.push(genre);
-    res.send(genre);
+    res.status(201).location(`/api/genres/${genre.id}`).json(genre);
 });
 
-app.put("/api/genres/:id", (req, res) => {
-    const genre = genres.find((g) => g.id === parseInt(req.params.id, 10));
-    if (!genre) return res.status(404).send("Genre with given ID not found.");
+app.put("/api/genres/:id", validateGenre, (req, res) => {
+    const id = parseInt(req.params.id, 10);
+    const genre = genres.find((g) => g.id === id);
+    if (!genre)
+        return res
+            .status(404)
+            .json({ error: "Genre with given ID not found." });
 
-    const { error } = validateGenre(req.body);
-    if (error) return res.status(400).send("Invalid input.");
+    const exists = genres.some(
+        (g) =>
+            g.id !== id &&
+            g.name.toLowerCase() === req.validatedBody.name.toLowerCase()
+    );
 
-    genre.name = req.body.name;
-    res.send(genre);
+    if (exists) return res.status(400).json({ error: "Genre already exists." });
+
+    genre.name = req.validatedBody.name;
+    res.json(genre);
 });
 
 app.delete("/api/genres/:id", (req, res) => {
-    const genre = genres.find((g) => g.id === parseInt(req.params.id, 10));
-    if (!genre) return res.status(404).send("Genre with given ID not found.");
-
-    const index = genres.indexOf(genre);
-    if (index > -1) {
-        genres.splice(index, 1);
-    }
-    res.send(genre);
+    const id = parseInt(req.params.id, 10);
+    const idx = genres.findIndex((g) => g.id === id);
+    if (idx === -1)
+        return res
+            .status(404)
+            .json({ error: "Genre with given ID not found." });
+    const [deleted] = genres.splice(idx, 1);
+    res.json(deleted);
 });
 
 const port = process.env.PORT || 4000;
 app.listen(port, () => {
     console.log(`Listening to port ${port}...`);
 });
-
-function validateGenre(genre) {
-    const schema = Joi.object({
-        name: Joi.string().min(3).required(),
-    });
-    return schema.validate(genre);
-}
